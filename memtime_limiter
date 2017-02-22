@@ -1,0 +1,72 @@
+#!/bin/bash
+# Author: Juanmi Taboada <juanmi@juanmitaboada.com>
+# Date: 22/february/2017
+# Web: http://www.juanmitaboada.com
+
+name="$0"
+function help() {
+    echo "ERROR: $2"
+    echo "Usage: $1 <timeout in seconds> <memory limit in gigabytes> <command> <arg1> <arg2> ..."
+}
+if [[ -z $1 ]] ; then
+    help $name "Missing timeout"
+    exit
+fi
+arg_timeout=$1
+shift
+
+if [[ -z $1 ]] ; then
+    help $name "Missing memory limit"
+    exit
+fi
+arg_memlimit=$1
+shift
+
+if [[ -z $1 ]] ; then
+    help $name "Missing command"
+    exit
+fi
+args=$*
+
+# Calculate memory limits
+arg_memlimit_calculated_dirty="`bc <<< $arg_memlimit*1000000`"
+arg_memlimit_calculated="`echo $arg_memlimit_calculated_dirty | cut -d "." -f 1`"
+
+# echo "Using: $arg_timeout seconds & $arg_memlimit_calculated Kilobytes"
+
+# Find external command
+if [[ -e "memtime_limiter.timeout" ]] ; then
+    timeout_cmd="./memtime_limiter.timeout"
+else
+    timeout_cmd="memtime_limiter.timeout"
+fi
+
+status=""
+output=$( $timeout_cmd -t $arg_timeout -m $arg_memlimit_calculated --no-info-on-success -c $args 2>&1)
+if [[ "$?" == "0" ]] ; then
+    echo -e "$output" | grep -v -e "MEM CPU" | grep -v '<time name="ALL">'
+    exit 0
+else
+    limit="`echo "$output" | grep -e '^<time name="ALL">'`"
+    if [[ -z "$limit" ]] ; then
+        #echo "COMMAND ERROR"
+        echo -e $output
+        exit 1
+    else
+        memout="`echo "$output" | grep -e '^MEM CPU'`"
+        timeout="`echo "$output" | grep -e '^TIMEOUT CPU'`"
+        if [[ -z "$memout" ]] ; then
+            if [[ -z "$timeout" ]] ; then
+                echo "ERROR: Unknown!"
+                result=4 # UNKNONW
+            else
+                echo "ERROR: Timed out!"
+                result=2 # TIMEOUT
+            fi
+        else
+            echo "ERROR: Not enought memory for you!"
+            result=3 # MEMOUT
+        fi
+        exit $result
+    fi
+fi
